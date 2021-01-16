@@ -5,6 +5,7 @@ use std::sync::PoisonError;
 use thiserror::Error;
 
 mod async_instrument;
+mod batch_observer;
 mod config;
 mod counter;
 mod descriptor;
@@ -21,6 +22,7 @@ mod value_recorder;
 
 use crate::sdk::export::ExportError;
 pub use async_instrument::{AsyncRunner, BatchObserverCallback, Observation, ObserverResult};
+pub use batch_observer::BatchObserverBuilder;
 pub use config::InstrumentConfig;
 pub use counter::{BoundCounter, Counter, CounterBuilder};
 pub use descriptor::Descriptor;

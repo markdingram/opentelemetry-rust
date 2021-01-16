@@ -6,14 +6,13 @@ use std::sync::Arc;
 
 /// An Observer callback that can report observations for multiple instruments.
 #[derive(Debug)]
-pub struct BatchObserver<'a> {
-    meter: &'a Meter,
-    runner: AsyncRunner,
+pub struct BatchObserver {
+    instrument: Arc<dyn sdk_api::AsyncInstrumentCore>,
 }
 
-impl<'a> BatchObserver<'a> {
-    pub(crate) fn new(meter: &'a Meter, runner: AsyncRunner) -> Self {
-        BatchObserver { meter, runner }
+impl BatchObserver {
+    pub(crate) fn new(instrument: Arc<dyn sdk_api::AsyncInstrumentCore>) -> Self {
+        BatchObserver { instrument }
     }
 }
 

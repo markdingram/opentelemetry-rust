@@ -1,14 +1,16 @@
 use crate::sdk::InstrumentationLibrary;
 use crate::{
     metrics::{
-        sdk_api, AsyncRunner, BatchObserver, BatchObserverCallback, CounterBuilder, Descriptor,
-        Measurement, NumberKind, ObserverResult, Result, SumObserverBuilder, UpDownCounterBuilder,
+        sdk_api, AsyncRunner, BatchObserverBuilder, CounterBuilder, Descriptor, Measurement,
+        NumberKind, ObserverResult, Result, SumObserverBuilder, UpDownCounterBuilder,
         UpDownSumObserverBuilder, ValueObserverBuilder, ValueRecorderBuilder,
     },
     Context, KeyValue,
 };
 use std::fmt;
 use std::sync::Arc;
+
+use super::async_instrument::BatchObserverResult;
 
 /// Returns named meter instances
 pub trait MeterProvider: fmt::Debug {
@@ -231,8 +233,11 @@ impl Meter {
 
     /// Creates a new `BatchObserver` that supports making batches of observations for
     /// multiple instruments.
-    pub fn batch_observer(&self, callback: BatchObserverCallback) -> BatchObserver<'_> {
-        BatchObserver::new(self, AsyncRunner::Batch(callback))
+    pub fn batch_observer<F>(&self, callback: F) -> BatchObserverBuilder<'_>
+    where
+        F: Fn(BatchObserverResult) + Send + Sync + 'static,
+    {
+        BatchObserverBuilder::new(self, callback)
     }
 
     /// Atomically record a batch of measurements.
@@ -268,5 +273,40 @@ impl Meter {
         runner: AsyncRunner,
     ) -> Result<Arc<dyn sdk_api::AsyncInstrumentCore + Send + Sync>> {
         self.core.new_async_instrument(descriptor, runner)
+    }
+
+    pub(crate) fn new_async_instrument_batch(
+        &self,
+        _descriptors: Vec<Descriptor>,
+        _runner: AsyncRunner,
+    ) -> Result<Arc<dyn sdk_api::AsyncInstrumentCore + Send + Sync>> {
+        unimplemented!();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::metrics::noop::NoopMeterProvider;
+
+    use super::*;
+
+    #[test]
+    fn test_batch_observer() -> Result<()> {
+        let noop = NoopMeterProvider::new();
+
+        let meter = noop.meter("test", None);
+
+        let callback = |_| {
+            // f.observe(labels, observations)
+        };
+
+        let mut builder = meter.batch_observer(callback);
+
+        builder.u64_sum_observer("something.one")?;
+        builder.u64_sum_observer("something.two")?;
+
+        let _batch_observer = builder.try_init()?;
+
+        Ok(())
     }
 }

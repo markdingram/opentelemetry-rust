@@ -1,7 +1,8 @@
 use crate::metrics::{
-    async_instrument::BatchObserverResult, AsyncRunner, BatchObserver, Descriptor, InstrumentKind,
-    Meter, NumberKind, Result,
+    AsyncRunner, BatchObserver, Descriptor, InstrumentKind, Meter, NumberKind, Result,
 };
+
+use super::{async_instrument::BatchObserverResult, SumObserver};
 
 //use super::AsyncRunner;
 
@@ -9,42 +10,52 @@ use crate::metrics::{
 #[derive(Debug)]
 pub struct BatchObserverBuilder<'a> {
     meter: &'a Meter,
-    runner: AsyncRunner,
+    // runner: AsyncRunner,
     descriptors: Vec<Descriptor>,
 }
 
 impl<'a> BatchObserverBuilder<'a> {
-    pub(crate) fn new<F>(meter: &'a Meter, callback: F) -> Self
-    where
-        F: Fn(BatchObserverResult) + Send + Sync + 'static,
-    {
+    pub(crate) fn new(meter: &'a Meter) -> Self {
         BatchObserverBuilder {
             meter,
-            runner: AsyncRunner::Batch(Box::new(callback)),
+            // runner: AsyncRunner::Batch(Box::new(callback)),
             descriptors: Vec::default(),
         }
     }
 
     /// adds a sum observer with given name to the batch
-    pub fn u64_sum_observer<T>(&mut self, name: T) -> Result<()>
+    pub fn u64_sum_observer<T>(&mut self, name: T) -> Result<SumObserver<u64>>
     where
         T: Into<String>,
     {
-        self.descriptors.push(Descriptor::new(
+        let descriptor = Descriptor::new(
             name.into(),
             self.meter.instrumentation_library().name,
             self.meter.instrumentation_library().version,
             InstrumentKind::Counter,
             NumberKind::U64,
-        ));
-        Ok(())
+        );
+        self.descriptors.push(descriptor.clone());
+
+        let instrument = self
+            .meter
+            .new_async_instrument(descriptor, AsyncRunner::None)?;
+
+        Ok(SumObserver {
+            instrument,
+            _marker: std::marker::PhantomData,
+        })
     }
 
     /// Creates a new batch observer.
-    pub fn try_init(self) -> Result<BatchObserver> {
+    pub fn try_init<F>(self, callback: F) -> Result<BatchObserver>
+    where
+        F: Fn(BatchObserverResult) + Send + Sync + 'static,
+    {
+        let runner = AsyncRunner::Batch(Box::new(callback));
         let instrument = self
             .meter
-            .new_async_instrument_batch(self.descriptors, self.runner)?;
+            .new_async_instrument_batch(self.descriptors, runner)?;
         Ok(BatchObserver::new(instrument))
     }
 }

@@ -10,8 +10,6 @@ use crate::{
 use std::fmt;
 use std::sync::Arc;
 
-use super::async_instrument::BatchObserverResult;
-
 /// Returns named meter instances
 pub trait MeterProvider: fmt::Debug {
     /// Creates an implementation of the [`Meter`] interface. The
@@ -233,11 +231,8 @@ impl Meter {
 
     /// Creates a new `BatchObserver` that supports making batches of observations for
     /// multiple instruments.
-    pub fn batch_observer<F>(&self, callback: F) -> BatchObserverBuilder<'_>
-    where
-        F: Fn(BatchObserverResult) + Send + Sync + 'static,
-    {
-        BatchObserverBuilder::new(self, callback)
+    pub fn batch_observer(&self) -> BatchObserverBuilder<'_> {
+        BatchObserverBuilder::new(self)
     }
 
     /// Atomically record a batch of measurements.
@@ -286,9 +281,19 @@ impl Meter {
 
 #[cfg(test)]
 mod tests {
-    use crate::metrics::noop::NoopMeterProvider;
+    use crate::metrics::{
+        async_instrument::BatchObserverResult, noop::NoopMeterProvider, SumObserver,
+    };
 
     use super::*;
+
+    // set of metrics to record in a batch
+    struct BatchMetrics {
+        // something.one
+        one: SumObserver<u64>,
+        // something.two
+        two: SumObserver<u64>,
+    }
 
     #[test]
     fn test_batch_observer() -> Result<()> {
@@ -296,16 +301,18 @@ mod tests {
 
         let meter = noop.meter("test", None);
 
-        let callback = |_| {
-            // f.observe(labels, observations)
+        let mut builder = meter.batch_observer();
+
+        let batch = BatchMetrics {
+            one: builder.u64_sum_observer("observed.in.batch.one")?,
+            two: builder.u64_sum_observer("observed.in.batch.two")?,
         };
 
-        let mut builder = meter.batch_observer(callback);
+        let callback = move |c: BatchObserverResult| {
+            c.observe(&[], &[batch.one.observation(1), batch.two.observation(2)])
+        };
 
-        builder.u64_sum_observer("something.one")?;
-        builder.u64_sum_observer("something.two")?;
-
-        let _batch_observer = builder.try_init()?;
+        let _batch_observer = builder.try_init(callback)?;
 
         Ok(())
     }

@@ -19,8 +19,8 @@ impl BatchObserver {
 /// A metric that captures a precomputed sum of values at a point in time.
 #[derive(Debug)]
 pub struct SumObserver<T> {
-    instrument: Arc<dyn sdk_api::AsyncInstrumentCore>,
-    _marker: std::marker::PhantomData<T>,
+    pub(crate) instrument: Arc<dyn sdk_api::AsyncInstrumentCore>,
+    pub(crate) _marker: std::marker::PhantomData<T>,
 }
 
 impl<T> SumObserver<T>

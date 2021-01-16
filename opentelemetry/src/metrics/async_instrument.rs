@@ -128,6 +128,9 @@ pub enum AsyncRunner {
     U64(U64ObserverCallback),
     /// Callback for batch observed values
     Batch(BatchObserverCallback),
+
+    /// Async batch
+    None,
 }
 
 impl AsyncRunner {
@@ -147,6 +150,7 @@ impl AsyncRunner {
             // TODO: this should not require an instrument to call. consider
             // moving to separate struct
             AsyncRunner::Batch(run) => run(BatchObserverResult::new(f)),
+            AsyncRunner::None => {}
         }
     }
 }
@@ -170,6 +174,8 @@ impl fmt::Debug for AsyncRunner {
                 .debug_struct("AsyncRunner::Batch")
                 .field("closure", &"Fn(BatchObserverResult)")
                 .finish(),
+
+            AsyncRunner::None => f.debug_struct("AsyncRunner::None").finish(),
         }
     }
 }

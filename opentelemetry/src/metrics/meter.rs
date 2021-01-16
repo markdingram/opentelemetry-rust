@@ -295,11 +295,38 @@ mod tests {
         two: SumObserver<u64>,
     }
 
+    struct CacheStats {
+        hits: u64,
+        misses: u64,
+    }
+
+    fn cache_stats() -> tokio::sync::watch::Receiver<CacheStats> {
+        unimplemented!();
+    }
+
     #[test]
     fn test_batch_observer() -> Result<()> {
         let noop = NoopMeterProvider::new();
 
         let meter = noop.meter("test", None);
+
+        let cache_stats: tokio::sync::watch::Receiver<CacheStats> = cache_stats();
+        let _batch = meter.batch_observer(move |r: BatchObserver| {
+            let hits = r.u64("cache.hits");
+            let misses = r.u64("cache.misses");
+            move |c: BatchObserverResult| {
+                let stats = cache_stats.borrow();
+                c.observe(
+                    &[],
+                    &[
+                        hits.observation(stats.hits),
+                        misses.observation(stats.misses),
+                    ],
+                )
+            }
+        });
+
+        // Previous iteration:
 
         let mut builder = meter.batch_observer();
 

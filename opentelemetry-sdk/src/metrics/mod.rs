@@ -1367,6 +1367,79 @@ mod tests {
         }
     }
 
+    // shows that the Async Observable Gauge is now retaining attribute sets that aren't included in subsequent callbacks.
+    //
+    // This behaviour has changed between OTEL v0.24 & v0.26 & now  seems to contradict the spec -> https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/metrics/sdk.md#observations-inside-asynchronous-callbacks
+    //
+    // "The implementation SHOULD NOT produce aggregated metric data for a previously-observed attribute set which is not observed during a successful callback."
+    //
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn asynchronous_gauge_should_drop_attribute_sets_no_longer_supplied_by_callback() {
+        let mut test_context = TestContext::new(Temporality::Cumulative);
+        let attributes1 = Arc::new([KeyValue::new("key1", "value1")]);
+        let attributes2 = Arc::new([KeyValue::new("key1", "value2")]);
+
+        // Create instrument and emit measurements
+        let has_run = AtomicBool::new(false);
+        let _observable_gauge = test_context
+            .meter()
+            .u64_observable_gauge("test_gauge")
+            .with_callback(move |observer| {
+                if !has_run.load(Ordering::SeqCst) {
+                    observer.observe(25, &[]);
+                    observer.observe(30, &*attributes1.clone());
+                    has_run.store(true, Ordering::SeqCst);
+                } else {
+                    observer.observe(25, &[]);
+
+                    // the second observation switches out the key1 / value1 observation for key1 / value2
+                    observer.observe(35, &*attributes2.clone());
+                }
+            })
+            .init();
+
+        test_context.flush_metrics();
+
+        // Test the first export
+        assert_correct_first_export(&mut test_context);
+
+        // Reset and export again without making any measurements
+        test_context.reset_metrics();
+
+        test_context.flush_metrics();
+
+        // The second export shouldn't include the attributes1 measurement
+        assert_correct_second_export(&mut test_context);
+
+        fn assert_correct_first_export(test_context: &mut TestContext) {
+            let gauge_data = test_context.get_aggregation::<data::Gauge<u64>>("test_gauge", None);
+            assert_eq!(gauge_data.data_points.len(), 2);
+            let zero_attribute_datapoint =
+                find_datapoint_with_no_attributes(&gauge_data.data_points)
+                    .expect("datapoint with no attributes expected");
+            assert_eq!(zero_attribute_datapoint.value, 25);
+            let data_point1 =
+                find_datapoint_with_key_value(&gauge_data.data_points, "key1", "value1")
+                    .expect("datapoint with key1=value1 expected");
+            assert_eq!(data_point1.value, 30);
+        }
+
+        fn assert_correct_second_export(test_context: &mut TestContext) {
+            let gauge_data = test_context.get_aggregation::<data::Gauge<u64>>("test_gauge", None);
+
+            // this assert fails currently - there are 3 observations still reported, including the (now stale) key1 / value1 observation
+            assert_eq!(gauge_data.data_points.len(), 2);
+            let zero_attribute_datapoint =
+                find_datapoint_with_no_attributes(&gauge_data.data_points)
+                    .expect("datapoint with no attributes expected");
+            assert_eq!(zero_attribute_datapoint.value, 25);
+            let data_point2 =
+                find_datapoint_with_key_value(&gauge_data.data_points, "key1", "value2")
+                    .expect("datapoint with key1=value2 expected");
+            assert_eq!(data_point2.value, 335);
+        }
+    }
+
     fn counter_multithreaded_aggregation_helper(temporality: Temporality) {
         // Arrange
         let mut test_context = TestContext::new(temporality);
